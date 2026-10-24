@@ -299,6 +299,69 @@ def read_website(url, company, country):
 # EXTRACT COMPANY PROFILE
 # --------------------------------------------------
 
+def generate_profile_text(prompt):
+    errors = []
+
+    # Primary provider: Gemini
+    try:
+        gemini_client = genai.Client(
+            api_key=st.secrets["GEMINI_API_KEY"]
+        )
+
+        response_text = generate_profile_text(prompt)
+
+        result = (response.text or "").strip()
+
+        if result:
+            return result
+
+        errors.append("Gemini returned an empty response.")
+
+    except Exception as exc:
+        errors.append(f"Gemini failed: {exc}")
+
+    # Fallback provider: OpenRouter
+    try:
+        openrouter_key = st.secrets["OPENROUTER_API_KEY"]
+
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {openrouter_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": "openai/gpt-4o-mini",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "temperature": 0,
+                "response_format": {
+                    "type": "json_object"
+                },
+            },
+            timeout=60,
+        )
+
+        response.raise_for_status()
+
+        result = (
+            response.json()["choices"][0]["message"]["content"] or ""
+        ).strip()
+
+        if result:
+            return result
+
+        errors.append("OpenRouter returned an empty response.")
+
+    except Exception as exc:
+        errors.append(f"OpenRouter failed: {exc}")
+
+    raise RuntimeError(" | ".join(errors))
+
 def extract_profile(company, country, url, website_text):
     prompt = f"""
 You are a company research assistant supporting KYC research.
@@ -343,7 +406,7 @@ WEBSITE CONTENT:
         }
     )
 
-    return json.loads(response.text)
+    return json.loads(response_text)
 
 
 # --------------------------------------------------
