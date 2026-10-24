@@ -1,4 +1,3 @@
-
 import streamlit as st
 import requests
 import json
@@ -186,82 +185,49 @@ def search_companies(company, country):
 # --------------------------------------------------
 
 def read_website(url, company, country):
+    """Read only the selected page and homepage to reduce extraction time."""
     domain = get_domain(url)
     parsed = urlparse(url)
 
-    # Start with the page selected by the user and its homepage.
-    urls = [
+    urls = list(dict.fromkeys([
         url,
         f"{parsed.scheme}://{parsed.netloc}/"
-    ]
+    ]))
 
-    # Find useful pages, restricted to the selected website's domain.
-    try:
-        response = tavily.search(
-            query=(
-                f'"{company}" address headquarters '
-                f'countries of operation business activities about'
-            ),
-            search_depth="advanced",
-            max_results=5,
-            include_domains=[domain],
-            exclude_domains=BLOCKED_DOMAINS
-        )
-
-        for item in response.get("results", []):
-            candidate_url = item.get("url", "")
-
-            if (
-                candidate_url
-                and get_domain(candidate_url) == domain
-                and is_candidate(item)
-            ):
-                urls.append(candidate_url)
-
-    except Exception:
-        # Continue with the selected page and homepage if this search fails.
-        pass
-
-    # Remove duplicate URLs.
-    urls = list(dict.fromkeys(urls))[:6]
-
-    # First attempt: standard extraction.
+    # Fast first pass: extract the two most relevant pages only.
     result = tavily.extract(
         urls=urls,
         extract_depth="basic",
         format="markdown",
-        timeout=30
+        timeout=25
     )
 
     extracted = [
         item for item in result.get("results", [])
         if item.get("raw_content", "").strip()
+        and get_domain(item.get("url", "")) == domain
     ]
 
-    # Retry with advanced extraction if standard extraction returns
-    # no useful content.
-    if not extracted or sum(
+    # Use advanced extraction only if the basic pass yields no useful text.
+    basic_text_length = sum(
         len(item.get("raw_content", "")) for item in extracted
-    ) < 500:
+    )
+    if not extracted or basic_text_length < 300:
         advanced_result = tavily.extract(
             urls=urls,
             extract_depth="advanced",
             format="markdown",
-            timeout=60
+            timeout=40
         )
-
         advanced_extracted = [
             item for item in advanced_result.get("results", [])
             if item.get("raw_content", "").strip()
+            and get_domain(item.get("url", "")) == domain
         ]
-
-        if sum(
-            len(item.get("raw_content", ""))
-            for item in advanced_extracted
-        ) > sum(
-            len(item.get("raw_content", ""))
-            for item in extracted
-        ):
+        advanced_text_length = sum(
+            len(item.get("raw_content", "")) for item in advanced_extracted
+        )
+        if advanced_text_length > basic_text_length:
             extracted = advanced_extracted
             result = advanced_result
 
@@ -270,36 +236,24 @@ def read_website(url, company, country):
         details = "; ".join(
             f"{item.get('url', 'Unknown URL')}: "
             f"{item.get('error', 'Extraction failed')}"
-            for item in failures[:3]
+            for item in failures[:2]
         )
-
         raise ValueError(
-            "Tavily could not extract readable content from the "
-            "selected website. "
-            + (f"Details: {details}" if details else
-               "The pages returned no usable content.")
+            "Tavily could not extract readable content from the selected website. "
+            + (f"Details: {details}" if details else "The pages returned no usable content.")
         )
 
     pages = []
-
     for item in extracted:
         source_url = item.get("url", "")
         content = item.get("raw_content", "").strip()
-
-        # Accept content only from the selected website's domain.
-        if get_domain(source_url) != domain:
-            continue
-
         if content:
             pages.append(
-                f"SOURCE URL: {source_url}\n"
-                f"WEBSITE CONTENT:\n{content[:10000]}"
+                f"SOURCE URL: {source_url}\nWEBSITE CONTENT:\n{content[:8000]}"
             )
 
     if not pages:
-        raise ValueError(
-            "No usable content was found on the selected domain."
-        )
+        raise ValueError("No usable content was found on the selected domain.")
 
     return "\n\n".join(pages)
 
