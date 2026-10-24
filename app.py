@@ -1,4 +1,3 @@
-
 import streamlit as st
 import requests
 import json
@@ -327,7 +326,7 @@ def generate_profile_text(prompt):
                 "Content-Type": "application/json",
             },
             json={
-                "model": "openai/gpt-4o-mini",
+                "model": "openrouter/free",
                 "messages": [
                     {
                         "role": "user",
