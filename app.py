@@ -397,6 +397,32 @@ if submitted:
 
 matches = st.session_state.get("matches", [])
 
+# Support results saved by the previous app version
+matches = [
+    {
+        "title": item.get(
+            "title", item.get("Company / page", "Company website")
+        ),
+        "url": item.get("url", item.get("Website", "")),
+        "domain": item.get(
+            "domain",
+            get_domain(item.get("url", item.get("Website", "")))
+        ),
+        "country": item.get(
+            "country",
+            item.get(
+                "Country searched",
+                st.session_state.get("searched_country", "")
+            )
+        ),
+        "snippet": item.get(
+            "snippet", item.get("Search excerpt", "")
+        )
+    }
+    for item in matches
+    if item.get("url") or item.get("Website")
+]
+
 if matches:
     st.subheader(f"Company website matches ({len(matches)})")
     st.caption(
