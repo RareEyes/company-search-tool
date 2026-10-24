@@ -137,13 +137,14 @@ def is_candidate(item):
 def search_companies(company, country):
     query = (
         f'"{company}" official company website '
-        f'{country} official about us contact'
+        f'{country} about us corporate website'
     )
 
     response = tavily.search(
         query=query,
         search_depth="advanced",
-        max_results=15
+        max_results=15,
+        exclude_domains=BLOCKED_DOMAINS
     )
 
     results = []
@@ -175,117 +176,121 @@ def search_companies(company, country):
 # READ THE SELECTED COMPANY WEBSITE
 # --------------------------------------------------
 
-def read_website(url):
-    headers = {
-        "User-Agent": "Mozilla/5.0 CompanyResearchTool/1.0"
-    }
+def read_website(url, company, country):
+    domain = get_domain(url)
+    parsed = urlparse(url)
 
-    response = requests.get(
+    # Start with the page selected by the user and its homepage.
+    urls = [
         url,
-        headers=headers,
-        timeout=15,
-        allow_redirects=True
-    )
-    response.raise_for_status()
+        f"{parsed.scheme}://{parsed.netloc}/"
+    ]
 
-    final_url = response.url
-
-    if get_domain(final_url) != get_domain(url):
-        raise ValueError(
-            "The selected website redirected to a different domain."
+    # Find useful pages, restricted to the selected website's domain.
+    try:
+        response = tavily.search(
+            query=(
+                f'"{company}" address headquarters '
+                f'countries of operation business activities about'
+            ),
+            search_depth="advanced",
+            max_results=5,
+            include_domains=[domain],
+            exclude_domains=BLOCKED_DOMAINS
         )
 
-    if "text/html" not in response.headers.get(
-        "Content-Type", ""
-    ).lower():
-        raise ValueError("The selected URL did not return an HTML page.")
+        for item in response.get("results", []):
+            candidate_url = item.get("url", "")
 
-    soup = BeautifulSoup(response.text, "html.parser")
+            if (
+                candidate_url
+                and get_domain(candidate_url) == domain
+                and is_candidate(item)
+            ):
+                urls.append(candidate_url)
 
-    for element in soup(
-        ["script", "style", "nav", "footer", "header", "noscript"]
-    ):
-        element.decompose()
+    except Exception:
+        # Continue with the selected page and homepage if this search fails.
+        pass
+
+    # Remove duplicate URLs.
+    urls = list(dict.fromkeys(urls))[:6]
+
+    # First attempt: standard extraction.
+    result = tavily.extract(
+        urls=urls,
+        extract_depth="basic",
+        format="markdown",
+        timeout=30
+    )
+
+    extracted = [
+        item for item in result.get("results", [])
+        if item.get("raw_content", "").strip()
+    ]
+
+    # Retry with advanced extraction if standard extraction returns
+    # no useful content.
+    if not extracted or sum(
+        len(item.get("raw_content", "")) for item in extracted
+    ) < 500:
+        advanced_result = tavily.extract(
+            urls=urls,
+            extract_depth="advanced",
+            format="markdown",
+            timeout=60
+        )
+
+        advanced_extracted = [
+            item for item in advanced_result.get("results", [])
+            if item.get("raw_content", "").strip()
+        ]
+
+        if sum(
+            len(item.get("raw_content", ""))
+            for item in advanced_extracted
+        ) > sum(
+            len(item.get("raw_content", ""))
+            for item in extracted
+        ):
+            extracted = advanced_extracted
+            result = advanced_result
+
+    if not extracted:
+        failures = result.get("failed_results", [])
+        details = "; ".join(
+            f"{item.get('url', 'Unknown URL')}: "
+            f"{item.get('error', 'Extraction failed')}"
+            for item in failures[:3]
+        )
+
+        raise ValueError(
+            "Tavily could not extract readable content from the "
+            "selected website. "
+            + (f"Details: {details}" if details else
+               "The pages returned no usable content.")
+        )
 
     pages = []
-    visited = {final_url}
 
-    def add_page(page_url, label=""):
-        try:
-            page_response = requests.get(
-                page_url,
-                headers=headers,
-                timeout=12,
-                allow_redirects=True
-            )
+    for item in extracted:
+        source_url = item.get("url", "")
+        content = item.get("raw_content", "").strip()
 
-            if not page_response.ok:
-                return
+        # Accept content only from the selected website's domain.
+        if get_domain(source_url) != domain:
+            continue
 
-            if get_domain(page_response.url) != get_domain(final_url):
-                return
-
-            if "text/html" not in page_response.headers.get(
-                "Content-Type", ""
-            ).lower():
-                return
-
-            page_soup = BeautifulSoup(
-                page_response.text, "html.parser"
-            )
-
-            page_title = (
-                page_soup.title.get_text(" ", strip=True)
-                if page_soup.title else label
-            )
-
-            for element in page_soup(
-                ["script", "style", "nav", "footer", "header", "noscript"]
-            ):
-                element.decompose()
-
-            text = page_soup.get_text(" ", strip=True)
-
+        if content:
             pages.append(
-                f"PAGE URL: {page_response.url}\n"
-                f"PAGE TITLE: {page_title}\n"
-                f"CONTENT: {text[:9000]}"
+                f"SOURCE URL: {source_url}\n"
+                f"WEBSITE CONTENT:\n{content[:10000]}"
             )
-
-        except Exception:
-            pass
-
-    add_page(final_url)
-
-    # Look for useful pages on the same company domain.
-    for link in soup.find_all("a", href=True):
-        label = link.get_text(" ", strip=True)
-        link_url = urljoin(final_url, link["href"])
-
-        if get_domain(link_url) != get_domain(final_url):
-            continue
-
-        if link_url in visited:
-            continue
-
-        combined = (label + " " + link_url).lower()
-
-        if any(
-            word in combined
-            for word in [
-                "about", "contact", "location",
-                "global", "office", "company",
-                "our-business", "where-we-operate"
-            ]
-        ):
-            visited.add(link_url)
-            add_page(link_url)
-
-        if len(pages) >= 4:
-            break
 
     if not pages:
-        raise ValueError("No readable website content was found.")
+        raise ValueError(
+            "No usable content was found on the selected domain."
+        )
 
     return "\n\n".join(pages)
 
@@ -500,7 +505,11 @@ if matches:
                 with st.spinner(
                     "Reading the selected website and extracting details..."
                 ):
-                    website_text = read_website(selected_url)
+                    website_text = read_website(
+                        selected_url,
+                        st.session_state["searched_company"],
+                        st.session_state["searched_country"]
+                    )
 
                     profile = extract_profile(
                         st.session_state["searched_company"],
@@ -512,11 +521,10 @@ if matches:
                     st.session_state["profile"] = profile
                     st.session_state["profile_url"] = selected_url
 
-            except Exception:
-                st.error(
-                    "The profile could not be extracted. "
-                    "The website may block automated access, "
-                    "or the content may not be readable."
+            except Exception as error:
+                st.error("The company profile could not be extracted.")
+                st.caption(
+                    f"Reason: {type(error).__name__}: {str(error)[:500]}"
                 )
     else:
         st.info("Select a website above to continue.")
