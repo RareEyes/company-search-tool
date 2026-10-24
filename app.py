@@ -1,3 +1,4 @@
+
 import streamlit as st
 import requests
 import json
@@ -15,6 +16,35 @@ st.set_page_config(
 st.title("Company Search & Profile")
 st.caption(
     "Find official company websites and extract company information directly from each result."
+)
+
+
+# Compact black styling for each individual Extract Profile button.
+st.markdown(
+    """
+    <style>
+    div[class*="st-key-extract_profile_"] {
+        display: flex;
+        justify-content: flex-start;
+    }
+    div[class*="st-key-extract_profile_"] button {
+        background-color: #000000 !important;
+        color: #ffffff !important;
+        border: 1px solid #000000 !important;
+        padding: 0.20rem 0.65rem !important;
+        min-height: 2rem !important;
+        height: 2rem !important;
+        width: auto !important;
+        font-size: 0.80rem !important;
+    }
+    div[class*="st-key-extract_profile_"] button:hover {
+        background-color: #222222 !important;
+        border-color: #222222 !important;
+        color: #ffffff !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 # --------------------------------------------------
@@ -447,101 +477,6 @@ if submitted:
 
 
 # --------------------------------------------------
-# WEBSITE RESULTS: TWO PER ROW, DIRECT EXTRACTION
-# --------------------------------------------------
-
-matches = st.session_state.get("matches", [])
-
-# Support results saved by the previous app version
-matches = [
-    {
-        "title": item.get(
-            "title", item.get("Company / page", "Company website")
-        ),
-        "url": item.get("url", item.get("Website", "")),
-        "domain": item.get(
-            "domain",
-            get_domain(item.get("url", item.get("Website", "")))
-        ),
-        "country": item.get(
-            "country",
-            item.get(
-                "Country searched",
-                st.session_state.get("searched_country", "")
-            )
-        ),
-        "snippet": item.get(
-            "snippet", item.get("Search excerpt", "")
-        )
-    }
-    for item in matches
-    if item.get("url") or item.get("Website")
-]
-
-if matches:
-    st.subheader(f"Company website matches ({len(matches)})")
-    st.caption(
-        "Select Extract Profile on any result to retrieve details directly "
-        "from that website. Only content from the selected website is used."
-    )
-
-    for row_start in range(0, len(matches), 2):
-        cols = st.columns(2)
-
-        for offset, col in enumerate(cols):
-            index = row_start + offset
-            if index >= len(matches):
-                continue
-
-            item = matches[index]
-
-            with col:
-                with st.container(border=True):
-                    st.markdown(f"**{item['title']}**")
-                    st.markdown(f"[{item['url']}]({item['url']})")
-                    st.caption(
-                        f"Country searched: {item['country']} · "
-                        f"Domain: {item['domain']}"
-                    )
-
-                    if st.button(
-                        "Extract Profile",
-                        key=f"extract_profile_{index}",
-                        use_container_width=True,
-                        type="primary"
-                    ):
-                        selected_url = item["url"]
-                        st.session_state["selected_url"] = selected_url
-                        st.session_state.pop("profile", None)
-
-                        try:
-                            with st.spinner(
-                                f"Reading {item['domain']} and extracting company details..."
-                            ):
-                                website_text = read_website(
-                                    selected_url,
-                                    st.session_state["searched_company"],
-                                    st.session_state["searched_country"]
-                                )
-
-                                profile = extract_profile(
-                                    st.session_state["searched_company"],
-                                    st.session_state["searched_country"],
-                                    selected_url,
-                                    website_text
-                                )
-
-                                st.session_state["profile"] = profile
-                                st.session_state["profile_url"] = selected_url
-
-                        except Exception as error:
-                            st.session_state.pop("profile", None)
-                            st.error("The company profile could not be extracted.")
-                            st.caption(
-                                f"Reason: {type(error).__name__}: {str(error)[:500]}"
-                            )
-
-# --------------------------------------------------
 # COMPANY PROFILE DISPLAY
 # --------------------------------------------------
 
@@ -613,3 +548,99 @@ if profile:
             f"- [{st.session_state['profile_url']}]"
             f"({st.session_state['profile_url']})"
         )
+
+# --------------------------------------------------
+# WEBSITE RESULTS: TWO PER ROW, DIRECT EXTRACTION
+# --------------------------------------------------
+
+matches = st.session_state.get("matches", [])
+
+# Support results saved by the previous app version
+matches = [
+    {
+        "title": item.get(
+            "title", item.get("Company / page", "Company website")
+        ),
+        "url": item.get("url", item.get("Website", "")),
+        "domain": item.get(
+            "domain",
+            get_domain(item.get("url", item.get("Website", "")))
+        ),
+        "country": item.get(
+            "country",
+            item.get(
+                "Country searched",
+                st.session_state.get("searched_country", "")
+            )
+        ),
+        "snippet": item.get(
+            "snippet", item.get("Search excerpt", "")
+        )
+    }
+    for item in matches
+    if item.get("url") or item.get("Website")
+]
+
+if matches:
+    st.subheader(f"Company website matches ({len(matches)})")
+    st.caption(
+        "Click Extract Profile on any result to retrieve details directly "
+        "from that website. Only content from the selected website is used."
+    )
+
+    for row_start in range(0, len(matches), 2):
+        cols = st.columns(2)
+
+        for offset, col in enumerate(cols):
+            index = row_start + offset
+            if index >= len(matches):
+                continue
+
+            item = matches[index]
+
+            with col:
+                with st.container(border=True):
+                    st.markdown(f"**{item['title']}**")
+                    st.markdown(f"[{item['url']}]({item['url']})")
+                    st.caption(
+                        f"Country searched: {item['country']} · "
+                        f"Domain: {item['domain']}"
+                    )
+
+                    if st.button(
+                        "Extract Profile",
+                        key=f"extract_profile_{index}",
+                        use_container_width=False,
+                        type="secondary"
+                    ):
+                        selected_url = item["url"]
+                        st.session_state["selected_url"] = selected_url
+                        st.session_state.pop("profile", None)
+
+                        try:
+                            with st.spinner(
+                                f"Reading {item['domain']} and extracting company details..."
+                            ):
+                                website_text = read_website(
+                                    selected_url,
+                                    st.session_state["searched_company"],
+                                    st.session_state["searched_country"]
+                                )
+
+                                profile = extract_profile(
+                                    st.session_state["searched_company"],
+                                    st.session_state["searched_country"],
+                                    selected_url,
+                                    website_text
+                                )
+
+                                st.session_state["profile"] = profile
+                                st.session_state["profile_url"] = selected_url
+                            st.rerun()
+
+                        except Exception as error:
+                            st.session_state.pop("profile", None)
+                            st.error("The company profile could not be extracted.")
+                            st.caption(
+                                f"Reason: {type(error).__name__}: {str(error)[:500]}"
+                            )
