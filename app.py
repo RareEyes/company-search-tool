@@ -15,8 +15,7 @@ st.set_page_config(
 
 st.title("Company Search & Profile")
 st.caption(
-    "Find official company websites, confirm your selection, "
-    "and extract company information from the selected website."
+    "Find official company websites and extract company information directly from each result."
 )
 
 # --------------------------------------------------
@@ -69,6 +68,16 @@ BLOCKED_DOMAINS = [
     "tofler.in",
     "yelp.com",
     "reddit.com",
+    "x.com",
+    "twitter.com",
+    "t.co",
+    "threads.net",
+    "trustpilot.com",
+    "tiktok.com",
+    "youtube.com",
+    "pinterest.com",
+    "medium.com",
+    "quora.com",
     "glassdoor.com",
     "indeed.com",
     "companieshouse.gov.uk",
@@ -484,7 +493,7 @@ if submitted:
 
 
 # --------------------------------------------------
-# SELECTABLE WEBSITE CARDS
+# WEBSITE RESULTS: TWO PER ROW, DIRECT EXTRACTION
 # --------------------------------------------------
 
 matches = st.session_state.get("matches", [])
@@ -518,96 +527,65 @@ matches = [
 if matches:
     st.subheader(f"Company website matches ({len(matches)})")
     st.caption(
-        "Select a website card. Only the selected website will "
-        "be used for the company profile."
+        "Select Extract Profile on any result to retrieve details directly "
+        "from that website. Only content from the selected website is used."
     )
 
-    for index, item in enumerate(matches):
-        selected = (
-            st.session_state.get("selected_url") == item["url"]
-        )
+    for row_start in range(0, len(matches), 2):
+        cols = st.columns(2)
 
-        with st.container(border=True):
-            col1, col2 = st.columns([5, 1])
+        for offset, col in enumerate(cols):
+            index = row_start + offset
+            if index >= len(matches):
+                continue
 
-            with col1:
-                st.markdown(f"**{item['title']}**")
-                st.markdown(f"[{item['url']}]({item['url']})")
-                st.caption(
-                    f"Country searched: {item['country']} · "
-                    f"Domain: {item['domain']}"
-                )
+            item = matches[index]
 
-                if selected:
-                    st.success("Selected for company profile")
-
-            with col2:
-                if selected:
-                    st.button(
-                        "Selected ✓",
-                        key=f"selected_{index}",
-                        disabled=True,
-                        use_container_width=True
+            with col:
+                with st.container(border=True):
+                    st.markdown(f"**{item['title']}**")
+                    st.markdown(f"[{item['url']}]({item['url']})")
+                    st.caption(
+                        f"Country searched: {item['country']} · "
+                        f"Domain: {item['domain']}"
                     )
-                else:
+
                     if st.button(
-                        "Select",
-                        key=f"select_{index}",
-                        use_container_width=True
+                        "Extract Profile",
+                        key=f"extract_profile_{index}",
+                        use_container_width=True,
+                        type="primary"
                     ):
-                        st.session_state["selected_url"] = item["url"]
+                        selected_url = item["url"]
+                        st.session_state["selected_url"] = selected_url
                         st.session_state.pop("profile", None)
-                        st.rerun()
 
-    st.divider()
+                        try:
+                            with st.spinner(
+                                f"Reading {item['domain']} and extracting company details..."
+                            ):
+                                website_text = read_website(
+                                    selected_url,
+                                    st.session_state["searched_company"],
+                                    st.session_state["searched_country"]
+                                )
 
-    selected_url = st.session_state.get("selected_url")
+                                profile = extract_profile(
+                                    st.session_state["searched_company"],
+                                    st.session_state["searched_country"],
+                                    selected_url,
+                                    website_text
+                                )
 
-    if selected_url:
-        selected_item = next(
-            (item for item in matches if item["url"] == selected_url),
-            None
-        )
+                                st.session_state["profile"] = profile
+                                st.session_state["profile_url"] = selected_url
 
-        if selected_item:
-            st.markdown(
-                f"**Selected website:** [{selected_item['domain']}]"
-                f"({selected_item['url']})"
-            )
-
-        if st.button(
-            "Confirm Website & Extract Profile",
-            type="primary",
-            use_container_width=True
-        ):
-            try:
-                with st.spinner(
-                    "Reading the selected website and extracting details..."
-                ):
-                    website_text = read_website(
-                        selected_url,
-                        st.session_state["searched_company"],
-                        st.session_state["searched_country"]
-                    )
-
-                    profile = extract_profile(
-                        st.session_state["searched_company"],
-                        st.session_state["searched_country"],
-                        selected_url,
-                        website_text
-                    )
-
-                    st.session_state["profile"] = profile
-                    st.session_state["profile_url"] = selected_url
-
-            except Exception as error:
-                st.error("The company profile could not be extracted.")
-                st.caption(
-                    f"Reason: {type(error).__name__}: {str(error)[:500]}"
-                )
-    else:
-        st.info("Select a website above to continue.")
-
+                        except Exception as error:
+                            st.session_state.pop("profile", None)
+                            st.error("The company profile could not be extracted.")
+                            st.caption(
+                                f"Reason: {type(error).__name__}: {str(error)[:500]}"
+                            )
 
 # --------------------------------------------------
 # COMPANY PROFILE DISPLAY
@@ -626,12 +604,35 @@ if profile:
     st.write(profile.get("address", "Not found on reviewed pages"))
 
     st.markdown("**Countries of operation**")
-    st.write(
-        profile.get(
-            "countries_of_operation",
-            "Not found on reviewed pages"
-        )
+    countries = profile.get(
+        "countries_of_operation",
+        "Not found on reviewed pages"
     )
+
+    # Render AI-returned country arrays as readable comma-separated text.
+    if isinstance(countries, list):
+        countries = ", ".join(
+            str(country).strip() for country in countries if str(country).strip()
+        )
+    elif isinstance(countries, dict):
+        countries = ", ".join(
+            str(value).strip() for value in countries.values() if str(value).strip()
+        )
+    elif isinstance(countries, str):
+        countries = countries.strip()
+        if countries.startswith("[") and countries.endswith("]"):
+            try:
+                parsed_countries = json.loads(countries)
+                if isinstance(parsed_countries, list):
+                    countries = ", ".join(
+                        str(country).strip()
+                        for country in parsed_countries
+                        if str(country).strip()
+                    )
+            except json.JSONDecodeError:
+                pass
+
+    st.write(countries or "Not found on reviewed pages")
 
     st.markdown("**Business description**")
     st.write(
