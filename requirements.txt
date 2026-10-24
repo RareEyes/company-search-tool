@@ -1,0 +1,5 @@
+streamlit
+tavily-python
+google-genai
+requests
+beautifulsoup4
