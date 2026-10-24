@@ -401,13 +401,6 @@ WEBSITE CONTENT:
 {website_text[:26000]}
 """
 
-    response = gemini.models.generate_content(
-        model="gemini-3.8-flash",
-        contents=prompt,
-        config={
-            "response_mime_type": "application/json"
-        }
-    )
     response_text = generate_profile_text(prompt)
     return json.loads(response_text)
 
