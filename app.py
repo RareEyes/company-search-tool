@@ -408,7 +408,7 @@ WEBSITE CONTENT:
             "response_mime_type": "application/json"
         }
     )
-
+    response_text = generate_profile_text(prompt)
     return json.loads(response_text)
 
 
