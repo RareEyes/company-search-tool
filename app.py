@@ -308,7 +308,10 @@ def generate_profile_text(prompt):
             api_key=st.secrets["GEMINI_API_KEY"]
         )
 
-        response_text = generate_profile_text(prompt)
+        response = gemini_client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=prompt
+        )
 
         result = (response.text or "").strip()
 
