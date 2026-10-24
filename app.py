@@ -402,7 +402,27 @@ WEBSITE CONTENT:
 """
 
     response_text = generate_profile_text(prompt)
-    return json.loads(response_text)
+
+    # Handle responses wrapped in Markdown or extra explanatory text.
+    response_text = response_text.strip()
+    start = response_text.find("{")
+    end = response_text.rfind("}")
+
+    if start == -1 or end == -1 or end < start:
+        raise ValueError(
+            "The AI provider did not return a valid JSON object. "
+            f"Response received: {response_text[:300]!r}"
+        )
+
+    try:
+        profile = json.loads(response_text[start:end + 1])
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"The AI response contains invalid JSON: {exc}. "
+            f"Response received: {response_text[:300]!r}"
+        )
+
+    return profile
 
 
 # --------------------------------------------------
